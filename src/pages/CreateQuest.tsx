@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,15 +14,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useMutation } from '@tanstack/react-query';
-import { questStore } from '@/data/questStore';
+import { enhancedQuestService } from '@/services/enhancedQuestService';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Coins, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const CreateQuest = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, userProfile, refreshUserProfile } = useAuth();
   const [requirements, setRequirements] = useState<string[]>(['']);
+  const [creationCost, setCreationCost] = useState(0);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -37,20 +41,43 @@ const CreateQuest = () => {
     tier: 'bronze' as const,
   });
 
+  // Calculate creation cost when user profile changes
+  useEffect(() => {
+    if (userProfile?.reward_points) {
+      const cost = Math.floor(userProfile.reward_points * 0.5);
+      setCreationCost(cost);
+    }
+  }, [userProfile?.reward_points]);
+
   const createMutation = useMutation({
-    mutationFn: () => questStore.createQuest({
-      ...formData,
-      requirements: requirements.filter(r => r.trim() !== ''),
-      createdBy: 'QuestHero',
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 86400000),
-    }),
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (!user?.id || !user?.username) {
+        throw new Error('User not authenticated');
+      }
+
+      return enhancedQuestService.createQuest(user.id, user.username, {
+        ...formData,
+        requirements: requirements.filter(r => r.trim() !== ''),
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 86400000),
+      });
+    },
+    onSuccess: async () => {
+      // Refresh user profile to update reward points
+      await refreshUserProfile();
+      
       toast({
         title: "Quest Created! 🎉",
-        description: "Your quest has been published successfully.",
+        description: `Your quest has been published successfully. ${creationCost} reward points deducted.`,
       });
       navigate('/browse');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Create Quest",
+        description: error.message || "An error occurred while creating the quest.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -89,6 +116,41 @@ const CreateQuest = () => {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-3xl mx-auto"
         >
+          {/* Cost Information */}
+          {userProfile && (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Coins className="h-5 w-5" />
+                  Creation Cost
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Creating a quest costs 50% of your current reward points
+                    </p>
+                    <p className="text-lg font-semibold">
+                      Cost: {creationCost} reward points
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Your balance: {userProfile.reward_points} reward points
+                    </p>
+                  </div>
+                  {creationCost > userProfile.reward_points && (
+                    <Alert className="max-w-sm">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        Insufficient reward points to create quest
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <form onSubmit={handleSubmit}>
             <Card>
               <CardHeader>
@@ -296,9 +358,18 @@ const CreateQuest = () => {
                   <Button
                     type="submit"
                     className="flex-1 gradient-primary"
-                    disabled={createMutation.isPending}
+                    disabled={
+                      createMutation.isPending || 
+                      !user?.id || 
+                      (userProfile && creationCost > userProfile.reward_points)
+                    }
                   >
-                    {createMutation.isPending ? 'Creating...' : 'Create Quest'}
+                    {createMutation.isPending 
+                      ? 'Creating...' 
+                      : userProfile && creationCost > userProfile.reward_points
+                        ? 'Insufficient Points'
+                        : 'Create Quest'
+                    }
                   </Button>
                 </div>
               </CardContent>

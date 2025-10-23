@@ -1,32 +1,93 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { questStore } from '@/data/questStore';
-import { ArrowLeft, Users, Clock, Zap, CheckCircle, Calendar, MapPin } from 'lucide-react';
+import { enhancedQuestService } from '@/services/enhancedQuestService';
+import { useAuth } from '@/contexts/AuthContext';
+import { ArrowLeft, Users, Clock, Zap, CheckCircle, Calendar, MapPin, Coins, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const QuestDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, userProfile, refreshUserProfile } = useAuth();
   const queryClient = useQueryClient();
+  const [evidence, setEvidence] = useState('');
+  const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
 
   const { data: quest, isLoading } = useQuery({
     queryKey: ['quest', id],
-    queryFn: () => questStore.getQuestById(id!),
+    queryFn: () => enhancedQuestService.getQuestById(id!),
+  });
+
+  const { data: questStatus, isLoading: statusLoading } = useQuery({
+    queryKey: ['questStatus', id, user?.id],
+    queryFn: () => user?.id ? enhancedQuestService.getUserQuestStatus(user.id, id!) : null,
+    enabled: !!user?.id && !!id,
   });
 
   const joinMutation = useMutation({
-    mutationFn: () => questStore.joinQuest(id!),
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (!user?.id || !user?.username) {
+        throw new Error('User not authenticated');
+      }
+      return enhancedQuestService.joinQuest(user.id, user.username, id!);
+    },
+    onSuccess: async () => {
+      await refreshUserProfile();
       queryClient.invalidateQueries({ queryKey: ['quest', id] });
+      queryClient.invalidateQueries({ queryKey: ['questStatus', id, user?.id] });
       toast({
         title: "Quest Joined! 🎉",
-        description: "You've successfully joined this quest. Good luck!",
+        description: `You've successfully joined this quest. ${quest?.joinCost} reward points deducted.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Join Quest",
+        description: error.message || "An error occurred while joining the quest.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) {
+        throw new Error('User not authenticated');
+      }
+      return enhancedQuestService.submitEvidence(user.id, id!, evidence);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['questStatus', id, user?.id] });
+      setIsSubmitDialogOpen(false);
+      setEvidence('');
+      toast({
+        title: "Evidence Submitted! 📸",
+        description: "Your evidence has been submitted for review.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Submit Evidence",
+        description: error.message || "An error occurred while submitting evidence.",
+        variant: "destructive",
       });
     },
   });
@@ -219,17 +280,112 @@ const QuestDetails = () => {
                       <div className="font-semibold capitalize">{quest.verificationMethod}</div>
                     </div>
                   </div>
+                  {quest.joinCost && (
+                    <div className="flex items-center gap-3">
+                      <Coins className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <div className="text-sm text-muted-foreground">Join Cost</div>
+                        <div className="font-semibold">{quest.joinCost} reward points</div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
-              <Button
-                className="w-full gradient-primary text-lg py-6"
-                size="lg"
-                onClick={() => joinMutation.mutate()}
-                disabled={joinMutation.isPending}
-              >
-                {joinMutation.isPending ? 'Joining...' : 'Join Quest'}
-              </Button>
+              {/* Dynamic Action Button */}
+              {!statusLoading && user?.id && (
+                <>
+                  {!questStatus ? (
+                    // User hasn't joined - show Join button
+                    <Button
+                      className="w-full gradient-primary text-lg py-6"
+                      size="lg"
+                      onClick={() => joinMutation.mutate()}
+                      disabled={
+                        joinMutation.isPending || 
+                        (userProfile && quest.joinCost && quest.joinCost > userProfile.reward_points)
+                      }
+                    >
+                      {joinMutation.isPending 
+                        ? 'Joining...' 
+                        : userProfile && quest.joinCost && quest.joinCost > userProfile.reward_points
+                          ? 'Insufficient Points'
+                          : `Join Quest (${quest.joinCost || 0} points)`
+                      }
+                    </Button>
+                  ) : questStatus.status === 'joined' ? (
+                    // User has joined but not submitted - show Submit Evidence button
+                    <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button
+                          className="w-full gradient-primary text-lg py-6"
+                          size="lg"
+                        >
+                          <Upload className="mr-2 h-5 w-5" />
+                          Submit Evidence
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Submit Quest Evidence</DialogTitle>
+                          <DialogDescription>
+                            Provide evidence that you've completed this quest. This will be reviewed by the community.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="evidence">Evidence Description</Label>
+                            <Textarea
+                              id="evidence"
+                              placeholder="Describe your completion or provide links to photos/videos..."
+                              value={evidence}
+                              onChange={(e) => setEvidence(e.target.value)}
+                              rows={4}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => setIsSubmitDialogOpen(false)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              className="flex-1 gradient-primary"
+                              onClick={() => submitMutation.mutate()}
+                              disabled={submitMutation.isPending || !evidence.trim()}
+                            >
+                              {submitMutation.isPending ? 'Submitting...' : 'Submit Evidence'}
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  ) : (
+                    // User has submitted evidence - show status
+                    <Button
+                      className="w-full text-lg py-6"
+                      size="lg"
+                      variant="outline"
+                      disabled
+                    >
+                      <CheckCircle className="mr-2 h-5 w-5 text-green-500" />
+                      Evidence Submitted - Under Review
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {!user?.id && (
+                <Button
+                  className="w-full gradient-primary text-lg py-6"
+                  size="lg"
+                  onClick={() => navigate('/profile')}
+                >
+                  Sign In to Join Quest
+                </Button>
+              )}
             </motion.div>
           </div>
         </div>

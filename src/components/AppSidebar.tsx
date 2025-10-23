@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { SignInButton } from '@/components/auth/SignInButton';
 
 export function AppSidebar() {
   const location = useLocation();
@@ -46,10 +47,11 @@ export function AppSidebar() {
           <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center">
             <Zap className="text-white" size={24} />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold text-gradient">QuestClash</h1>
             <p className="text-xs text-muted-foreground">Level Up Your Life</p>
           </div>
+          <SignInButton />
         </div>
       </SidebarHeader>
       <SidebarContent>

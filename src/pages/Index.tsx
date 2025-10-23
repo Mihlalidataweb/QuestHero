@@ -5,23 +5,46 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useQuery } from '@tanstack/react-query';
 import { questStore } from '@/data/questStore';
+import { enhancedQuestService } from '@/services/enhancedQuestService';
+import { userService } from '@/services/userService';
+import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Trophy, Zap, Target, TrendingUp, Clock, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Index = () => {
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => questStore.getCurrentUser(),
+  const { user, userProfile, isAuthenticated } = useAuth();
+
+  // Fetch real-time user data
+  const { data: realTimeUserData } = useQuery({
+    queryKey: ['userProfile', userProfile?.id],
+    queryFn: () => userProfile?.id ? userService.getUserById(userProfile.id) : null,
+    enabled: !!userProfile?.id,
+    refetchInterval: 5000, // Refetch every 5 seconds
   });
 
-  const { data: quests } = useQuery({
-    queryKey: ['quests'],
-    queryFn: () => questStore.getQuests(),
+  // Fetch user's active quests
+  const { data: activeQuests } = useQuery({
+    queryKey: ['activeQuests', userProfile?.id],
+    queryFn: () => userProfile?.id ? enhancedQuestService.getUserActiveQuests(userProfile.id) : [],
+    enabled: !!userProfile?.id,
   });
 
-  const activeQuests = quests?.filter(q => q.status === 'active').slice(0, 3) || [];
-  const xpProgress = user ? (user.xp / user.xpToNextLevel) * 100 : 0;
+  // Fetch user's quest participations
+  const { data: questParticipations } = useQuery({
+    queryKey: ['questParticipations', userProfile?.id],
+    queryFn: () => userProfile?.id ? userService.getUserQuestParticipations(userProfile.id) : [],
+    enabled: !!userProfile?.id,
+  });
+
+  // Calculate stats from real data
+  const currentUser = realTimeUserData || userProfile;
+  const totalQuests = (activeQuests?.length || 0) + (questParticipations?.length || 0);
+  const completedQuests = questParticipations?.filter(p => p.status === 'completed').length || 0;
+  const xpProgress = currentUser ? (currentUser.xp / currentUser.xp_to_next_level) * 100 : 0;
+
+  // Get recent active quests for display
+  const recentActiveQuests = activeQuests?.slice(0, 3) || [];
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -29,7 +52,7 @@ const Index = () => {
         <SidebarTrigger />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Welcome back, {user?.username}!</p>
+          <p className="text-sm text-muted-foreground">Welcome back, {currentUser?.username || 'User'}!</p>
         </div>
       </header>
 
@@ -48,9 +71,9 @@ const Index = () => {
                   <Zap className="h-4 w-4 text-primary" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{user?.level}</div>
+                  <div className="text-3xl font-bold">{currentUser?.level || 1}</div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {user?.xp.toLocaleString()} / {user?.xpToNextLevel.toLocaleString()} XP
+                    {(currentUser?.xp || 0).toLocaleString()} / {(currentUser?.xp_to_next_level || 1000).toLocaleString()} XP
                   </p>
                   <Progress value={xpProgress} className="mt-2" />
                 </CardContent>
@@ -68,9 +91,9 @@ const Index = () => {
                   <Trophy className="h-4 w-4 text-secondary" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">#{user?.rank}</div>
+                  <div className="text-3xl font-bold">#{currentUser?.rank || 'N/A'}</div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {user?.tier.toUpperCase()} Tier
+                    {(currentUser?.tier || 'bronze').toUpperCase()} Tier
                   </p>
                 </CardContent>
               </Card>
@@ -87,9 +110,9 @@ const Index = () => {
                   <Target className="h-4 w-4 text-accent" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{user?.completedQuests}</div>
+                  <div className="text-3xl font-bold">{completedQuests}</div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    of {user?.totalQuests} completed
+                    of {totalQuests} completed
                   </p>
                 </CardContent>
               </Card>
@@ -106,7 +129,7 @@ const Index = () => {
                   <TrendingUp className="h-4 w-4 text-green-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{user?.streak} 🔥</div>
+                  <div className="text-3xl font-bold">{currentUser?.streak || 0} 🔥</div>
                   <p className="text-xs text-muted-foreground mt-1">
                     days in a row
                   </p>
@@ -127,7 +150,7 @@ const Index = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {activeQuests.map((quest, index) => (
+                {recentActiveQuests.map((quest, index) => (
                   <motion.div
                     key={quest.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -174,7 +197,7 @@ const Index = () => {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
-                {user?.badges.map((badge, index) => (
+                {(currentUser?.badges || []).map((badge, index) => (
                   <motion.div
                     key={badge}
                     initial={{ opacity: 0, scale: 0 }}
