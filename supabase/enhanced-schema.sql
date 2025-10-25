@@ -100,12 +100,12 @@ begin
   
   -- Create user with signup bonus
   insert into public.users (username, wallet_address, xp, reward_points)
-  values (new_username, wallet_addr, 100, 100)
+  values (new_username, wallet_addr, 1000, 100)
   returning id into new_user_id;
   
   -- Record signup bonus transaction
   insert into public.xp_transactions (user_id, username, transaction_type, amount, description)
-  values (new_user_id, new_username, 'signup_bonus', 100, 'Welcome bonus for new user registration');
+  values (new_user_id, new_username, 'signup_bonus', 1000, 'Welcome bonus for new user registration');
   
   -- Create wallet record
   insert into public.user_wallets (user_id, wallet_address)

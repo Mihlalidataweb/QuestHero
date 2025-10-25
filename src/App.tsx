@@ -18,10 +18,19 @@ import NotFound from "@/pages/NotFound";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { useAuth } from '@/contexts/AuthContext';
 import SignIn from "@/pages/SignIn";
+import { useEffect } from "react";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 const queryClient = new QueryClient();
 
 function App() {
+  useEffect(() => {
+    try {
+      sdk.actions.ready();
+    } catch (e) {
+      // ignore if not in mini app host
+    }
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

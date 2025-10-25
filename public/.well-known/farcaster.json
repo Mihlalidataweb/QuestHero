@@ -1,0 +1,31 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "baseBuilder": {
+    "allowedAddresses": []
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "QuestClash",
+    "subtitle": "Quests, XP, and real-time sync",
+    "description": "Join quests, submit evidence, and earn XP with real-time updates.",
+    "homeUrl": "http://localhost:5173/",
+    "iconUrl": "https://api.dicebear.com/7.x/avataaars/svg?seed=QuestHero",
+    "splashImageUrl": "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400",
+    "splashBackgroundColor": "#0b0b1f",
+    "webhookUrl": "",
+    "primaryCategory": "social",
+    "tags": ["quests", "xp", "supabase", "base"],
+    "screenshotUrls": [
+      "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400"
+    ],
+    "heroImageUrl": "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400",
+    "tagline": "Compete, vote, and level up",
+    "ogTitle": "QuestClash",
+    "ogDescription": "Join quests and earn XP on Base",
+    "ogImageUrl": "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=400"
+  }
+}

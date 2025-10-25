@@ -1,16 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { enhancedQuestService } from '@/services/enhancedQuestService';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowLeft, Users, Clock, Zap, CheckCircle, Calendar, MapPin, Coins, Upload } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Users, 
+  Clock, 
+  Zap, 
+  CheckCircle, 
+  Calendar, 
+  MapPin, 
+  Coins, 
+  Upload, 
+  LogIn, 
+  Trophy, 
+  Loader2 
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -19,7 +31,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
 const QuestDetails = () => {
@@ -30,6 +41,8 @@ const QuestDetails = () => {
   const queryClient = useQueryClient();
   const [evidence, setEvidence] = useState('');
   const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [isSubmittingEvidence, setIsSubmittingEvidence] = useState(false);
 
   const { data: quest, isLoading } = useQuery({
     queryKey: ['quest', id],
@@ -42,55 +55,233 @@ const QuestDetails = () => {
     enabled: !!user?.id && !!id,
   });
 
-  const joinMutation = useMutation({
-    mutationFn: async () => {
-      if (!user?.id || !user?.username) {
-        throw new Error('User not authenticated');
-      }
-      return enhancedQuestService.joinQuest(user.id, user.username, id!);
-    },
-    onSuccess: async () => {
+  // Enhanced quest joining functionality
+  const handleJoinQuest = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to join this quest",
+        variant: "destructive",
+      });
+      navigate('/profile');
+      return;
+    }
+
+    if (!quest?.joinCost || userProfile?.reward_points < quest.joinCost) {
+      toast({
+        title: "Insufficient Points",
+        description: `You need ${quest?.joinCost || 0} points to join this quest.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsJoining(true);
+    try {
+      await enhancedQuestService.joinQuest(user.id, user.username, id!);
       await refreshUserProfile();
       queryClient.invalidateQueries({ queryKey: ['quest', id] });
       queryClient.invalidateQueries({ queryKey: ['questStatus', id, user?.id] });
       toast({
         title: "Quest Joined! 🎉",
-        description: `You've successfully joined this quest. ${quest?.joinCost} reward points deducted.`,
+        description: `Successfully joined "${quest?.title}". Good luck on your quest!`,
       });
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
+      console.error('Error joining quest:', error);
       toast({
         title: "Failed to Join Quest",
         description: error.message || "An error occurred while joining the quest.",
         variant: "destructive",
       });
-    },
-  });
+    } finally {
+      setIsJoining(false);
+    }
+  };
 
-  const submitMutation = useMutation({
-    mutationFn: async () => {
-      if (!user?.id) {
-        throw new Error('User not authenticated');
-      }
-      return enhancedQuestService.submitEvidence(user.id, id!, evidence);
-    },
-    onSuccess: () => {
+  // Enhanced evidence submission functionality
+  const handleSubmitEvidence = async () => {
+    if (!user || !evidence.trim()) {
+      toast({
+        title: "Evidence Required",
+        description: "Please provide evidence description",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingEvidence(true);
+    try {
+      await enhancedQuestService.submitEvidence(user.id, id!, evidence.trim());
       queryClient.invalidateQueries({ queryKey: ['questStatus', id, user?.id] });
       setIsSubmitDialogOpen(false);
       setEvidence('');
       toast({
         title: "Evidence Submitted! 📸",
-        description: "Your evidence has been submitted for review.",
+        description: "Your evidence has been submitted for review. You'll be notified once it's approved.",
       });
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
+      console.error('Error submitting evidence:', error);
       toast({
         title: "Failed to Submit Evidence",
         description: error.message || "An error occurred while submitting evidence.",
         variant: "destructive",
       });
-    },
-  });
+    } finally {
+      setIsSubmittingEvidence(false);
+    }
+  };
+
+  // Enhanced action button content with better status indication
+  const getActionButtonContent = () => {
+    if (!user) {
+      return (
+        <div className="space-y-3">
+          <Button 
+            onClick={() => navigate('/profile')}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+            size="lg"
+          >
+            <LogIn className="w-4 h-4 mr-2" />
+            Sign In to Join Quest
+          </Button>
+          <p className="text-sm text-gray-600 text-center">
+            Sign in to join quests, earn XP, and track your progress
+          </p>
+        </div>
+      );
+    }
+
+    // User is authenticated - show appropriate action based on quest status
+    if (!questStatus) {
+      // User hasn't joined - show Join button
+      const canJoin = userProfile && quest?.joinCost ? userProfile.reward_points >= quest.joinCost : false;
+      return (
+        <div className="space-y-3">
+          <Button 
+            onClick={handleJoinQuest}
+            disabled={isJoining || !canJoin}
+            className={`w-full font-medium py-3 px-6 rounded-lg transition-colors text-lg ${
+              canJoin 
+                ? 'bg-green-600 hover:bg-green-700 text-white' 
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+            size="lg"
+          >
+            {isJoining ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Joining Quest...
+              </>
+            ) : (
+              <>
+                <Trophy className="w-4 h-4 mr-2" />
+                Join Quest ({quest?.joinCost || 0} points)
+              </>
+            )}
+          </Button>
+          {!canJoin && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-600 text-center">
+                Insufficient points. You need {quest?.joinCost || 0} points to join this quest.
+                <br />
+                <span className="text-gray-600">Current balance: {userProfile?.reward_points || 0} points</span>
+              </p>
+            </div>
+          )}
+          {canJoin && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-700 text-center">
+                You have {userProfile?.reward_points || 0} points. Joining will cost {quest?.joinCost || 0} points.
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    switch (questStatus.status) {
+      case 'joined':
+        return (
+          <div className="space-y-3">
+            <Button 
+              onClick={() => setIsSubmitDialogOpen(true)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors text-lg"
+              size="lg"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Submit Evidence
+            </Button>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center text-green-800">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                <span className="text-sm font-medium">Quest Joined Successfully!</span>
+              </div>
+              <p className="text-xs text-green-700 mt-1">
+                Complete the quest requirements and submit your evidence to earn rewards.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'submitted':
+        return (
+          <div className="space-y-3">
+            <Button 
+              disabled
+              className="w-full bg-yellow-100 text-yellow-800 font-medium py-3 px-6 rounded-lg cursor-not-allowed text-lg"
+              size="lg"
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              Evidence Under Review
+            </Button>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <div className="flex items-center text-yellow-800">
+                <Clock className="w-4 h-4 mr-2" />
+                <span className="text-sm font-medium">Evidence Submitted</span>
+              </div>
+              <p className="text-xs text-yellow-700 mt-1">
+                Your evidence is being reviewed. You'll be notified once it's approved.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'completed':
+        return (
+          <div className="space-y-3">
+            <Button 
+              disabled
+              className="w-full bg-green-100 text-green-800 font-medium py-3 px-6 rounded-lg cursor-not-allowed text-lg"
+              size="lg"
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              Quest Completed
+            </Button>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center text-green-800">
+                <Trophy className="w-4 h-4 mr-2" />
+                <span className="text-sm font-medium">Congratulations!</span>
+              </div>
+              <p className="text-xs text-green-700 mt-1">
+                You've successfully completed this quest and earned your rewards.
+              </p>
+            </div>
+          </div>
+        );
+
+      default:
+        return (
+          <Button 
+            onClick={() => navigate('/profile')}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-6 rounded-lg transition-colors text-lg"
+            size="lg"
+          >
+            <LogIn className="w-4 h-4 mr-2" />
+            Sign In to Join Quest
+          </Button>
+        );
+    }
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -292,104 +483,68 @@ const QuestDetails = () => {
                 </CardContent>
               </Card>
 
-              {/* Dynamic Action Button */}
-              {!statusLoading && user?.id && (
-                <>
-                  {!questStatus ? (
-                    // User hasn't joined - show Join button
-                    <Button
-                      className="w-full gradient-primary text-lg py-6"
-                      size="lg"
-                      onClick={() => joinMutation.mutate()}
-                      disabled={
-                        joinMutation.isPending || 
-                        (userProfile && quest.joinCost && quest.joinCost > userProfile.reward_points)
-                      }
-                    >
-                      {joinMutation.isPending 
-                        ? 'Joining...' 
-                        : userProfile && quest.joinCost && quest.joinCost > userProfile.reward_points
-                          ? 'Insufficient Points'
-                          : `Join Quest (${quest.joinCost || 0} points)`
-                      }
-                    </Button>
-                  ) : questStatus.status === 'joined' ? (
-                    // User has joined but not submitted - show Submit Evidence button
-                    <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button
-                          className="w-full gradient-primary text-lg py-6"
-                          size="lg"
-                        >
-                          <Upload className="mr-2 h-5 w-5" />
-                          Submit Evidence
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Submit Quest Evidence</DialogTitle>
-                          <DialogDescription>
-                            Provide evidence that you've completed this quest. This will be reviewed by the community.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="evidence">Evidence Description</Label>
-                            <Textarea
-                              id="evidence"
-                              placeholder="Describe your completion or provide links to photos/videos..."
-                              value={evidence}
-                              onChange={(e) => setEvidence(e.target.value)}
-                              rows={4}
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => setIsSubmitDialogOpen(false)}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              className="flex-1 gradient-primary"
-                              onClick={() => submitMutation.mutate()}
-                              disabled={submitMutation.isPending || !evidence.trim()}
-                            >
-                              {submitMutation.isPending ? 'Submitting...' : 'Submit Evidence'}
-                            </Button>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  ) : (
-                    // User has submitted evidence - show status
-                    <Button
-                      className="w-full text-lg py-6"
-                      size="lg"
-                      variant="outline"
-                      disabled
-                    >
-                      <CheckCircle className="mr-2 h-5 w-5 text-green-500" />
-                      Evidence Submitted - Under Review
-                    </Button>
-                  )}
-                </>
-              )}
-
-              {!user?.id && (
-                <Button
-                  className="w-full gradient-primary text-lg py-6"
-                  size="lg"
-                  onClick={() => navigate('/profile')}
-                >
-                  Sign In to Join Quest
-                </Button>
-              )}
+              {/* Enhanced Action Button Section */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quest Actions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {getActionButtonContent()}
+                </CardContent>
+              </Card>
             </motion.div>
           </div>
         </div>
       </main>
+
+      {/* Enhanced Evidence Submission Dialog */}
+      <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Submit Quest Evidence</DialogTitle>
+            <DialogDescription>
+              Provide evidence that you've completed this quest. This will be reviewed by the community.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="evidence">Evidence Description</Label>
+              <Textarea
+                id="evidence"
+                placeholder="Describe your completion or provide links to photos/videos..."
+                value={evidence}
+                onChange={(e) => setEvidence(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setIsSubmitDialogOpen(false)}
+                disabled={isSubmittingEvidence}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                onClick={handleSubmitEvidence}
+                disabled={isSubmittingEvidence || !evidence.trim()}
+              >
+                {isSubmittingEvidence ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Evidence'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
